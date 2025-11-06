@@ -495,10 +495,15 @@
           isLoadingPedidos = false;
 
           console.log('✅ Pedidos recebidos:', rows?.length || 0);
+          console.log('Tipo de dados recebidos:', typeof rows);
+          console.log('É array?:', Array.isArray(rows));
 
           if (!rows || !Array.isArray(rows)) {
-            console.error('❌ Dados inválidos recebidos');
+            console.error('❌ Dados inválidos recebidos. Tipo:', typeof rows, '| Valor:', rows);
             renderizarPedidos([]);
+            if (!silencioso) {
+              showToast('Erro: Dados inválidos recebidos do servidor', 'warn');
+            }
             return;
           }
 
@@ -511,6 +516,8 @@
           }
           isLoadingPedidos = false;
           console.error('❌ Erro ao carregar pedidos:', err);
+          console.error('Mensagem de erro:', err.message);
+          console.error('Stack:', err.stack);
           showToast('Erro ao carregar pedidos: ' + err.message, 'error');
         })
         .getPedidosComEstoque();

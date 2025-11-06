@@ -368,12 +368,14 @@ function getPedidosComEstoque() {
     }
 
     const rowsCount = wsPedidos.getLastRow() - 1;
-    const numCols = Math.min(wsPedidos.getLastColumn(), 23);
+    const totalCols = wsPedidos.getLastColumn();
+    const numCols = Math.max(22, Math.min(totalCols, 23)); // Garante pelo menos 22 colunas
 
+    Logger.log('Total de colunas na planilha: ' + totalCols);
     Logger.log('Lendo ' + rowsCount + ' pedidos com ' + numCols + ' colunas');
-    
+
     let pedidosData = wsPedidos.getRange(2, 1, rowsCount, numCols).getValues();
-    
+
     Logger.log('Pedidos lidos: ' + pedidosData.length);
 
     const idsUnicos = new Set();
@@ -437,13 +439,14 @@ function getPedidosComEstoque() {
     Logger.log('Estoque carregado: ' + estoqueMap.size + ' itens');
 
     const resultado = [];
-    
+
     for (let i = 0; i < pedidosData.length; i++) {
       const pedido = pedidosData[i];
       const arr = [];
-      
+
+      // Garantir que sempre temos 23 posições, mesmo que a planilha tenha menos colunas
       for (let j = 0; j < 23; j++) {
-        if (j < pedido.length) {
+        if (j < pedido.length && pedido[j] !== undefined && pedido[j] !== null) {
           arr[j] = _serialize_(pedido[j]);
         } else {
           arr[j] = '';
@@ -454,9 +457,9 @@ function getPedidosComEstoque() {
       arr[2] = produtosMap.get(idItem) || idItem || 'Item Desconhecido';
       arr[19] = estoqueMap.get(idItem) || 0;
       arr[20] = idItem;
-      arr[21] = pedido[21] || 0;
-      arr[22] = pedido[22] || '';
-      
+      arr[21] = (pedido.length > 21 && pedido[21]) ? pedido[21] : 0;
+      arr[22] = (pedido.length > 22 && pedido[22]) ? pedido[22] : ''; // Data início devolução (pode não existir ainda)
+
       resultado.push(arr);
     }
 
@@ -471,12 +474,17 @@ function getPedidosComEstoque() {
     });
 
     Logger.log('=== FIM - Retornando ' + resultado.length + ' pedidos ===');
-    
+
+    if (resultado.length > 0) {
+      Logger.log('Exemplo de primeiro pedido (primeiros 10 campos): ' + JSON.stringify(resultado[0].slice(0, 10)));
+    }
+
     return resultado;
-    
+
   } catch (e) {
     Logger.log('ERRO em getPedidosComEstoque: ' + e.message);
     Logger.log('Stack: ' + e.stack);
+    Logger.log('Retornando array vazio devido ao erro');
     return [];
   }
 }
