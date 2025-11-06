@@ -887,6 +887,99 @@ function testarGetPedidosComEstoque() {
   }
 }
 
+/**
+ * NOVA FUNÇÃO: Diagnostica problemas de correspondência de estoque
+ */
+function diagnosticarEstoque() {
+  Logger.log('==========================================');
+  Logger.log('DIAGNÓSTICO DE ESTOQUE');
+  Logger.log('==========================================');
+
+  try {
+    const ss = getSS_();
+
+    // Ler MOVIMENTACOES
+    const wsPedidos = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
+    if (!wsPedidos || wsPedidos.getLastRow() < 2) {
+      Logger.log('Aba MOVIMENTACOES vazia');
+      return;
+    }
+
+    const pedidosData = wsPedidos.getRange(2, 1, Math.min(wsPedidos.getLastRow() - 1, 10), 23).getValues();
+
+    // Ler ESTOQUE
+    const wsEstoque = _getSheetByNames_(ss, ["Estoque"]);
+    if (!wsEstoque || wsEstoque.getLastRow() < 2) {
+      Logger.log('Aba Estoque vazia');
+      return;
+    }
+
+    const colId = _findColByNames_(wsEstoque, ["ID_Item", "ID", "Item", "Codigo", "Código"]);
+    const colQtd = _findColByNames_(wsEstoque, ["Qtd", "Quantidade", "Estoque", "Qtd_Atual", "Qtde"]);
+
+    if (!colId || !colQtd) {
+      Logger.log('Colunas não encontradas no Estoque');
+      return;
+    }
+
+    const maxRows = Math.min(wsEstoque.getLastRow() - 1, 1000);
+    const estoqueData = wsEstoque.getRange(2, 1, maxRows, 3).getValues();
+
+    // Criar mapa de estoque
+    const estoqueMap = new Map();
+    estoqueData.forEach(function(row) {
+      const id = _normalizeId_(row[0]);
+      const qtd = row[1];
+      if (id) {
+        estoqueMap.set(id, qtd);
+      }
+    });
+
+    Logger.log('Total de itens no estoque: ' + estoqueMap.size);
+    Logger.log('');
+    Logger.log('Verificando primeiros 10 pedidos:');
+    Logger.log('==========================================');
+
+    pedidosData.forEach(function(pedido, index) {
+      const idPedido = pedido[0];
+      const idItem = _normalizeId_(pedido[2]);
+      const estoqueEncontrado = estoqueMap.get(idItem);
+
+      Logger.log('');
+      Logger.log('Pedido ' + (index + 1) + ':');
+      Logger.log('  ID Pedido: ' + idPedido);
+      Logger.log('  ID Item (raw): "' + pedido[2] + '"');
+      Logger.log('  ID Item (normalizado): "' + idItem + '"');
+      Logger.log('  Estoque encontrado: ' + (estoqueEncontrado !== undefined ? estoqueEncontrado : 'NÃO ENCONTRADO'));
+
+      if (estoqueEncontrado === undefined) {
+        // Tentar encontrar IDs similares no estoque
+        const similares = [];
+        estoqueMap.forEach(function(qtd, id) {
+          if (id.includes(idItem) || idItem.includes(id)) {
+            similares.push(id + ' (qtd: ' + qtd + ')');
+          }
+        });
+
+        if (similares.length > 0) {
+          Logger.log('  IDs similares no estoque: ' + similares.join(', '));
+        } else {
+          Logger.log('  Nenhum ID similar encontrado no estoque');
+        }
+      }
+    });
+
+    Logger.log('');
+    Logger.log('==========================================');
+    Logger.log('DIAGNÓSTICO CONCLUÍDO');
+    Logger.log('==========================================');
+
+  } catch (erro) {
+    Logger.log('ERRO: ' + erro.message);
+    Logger.log('Stack: ' + erro.stack);
+  }
+}
+
 function debugResumo() {
   const ss = getSS_();
   const ws = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
