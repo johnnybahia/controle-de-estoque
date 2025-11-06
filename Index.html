@@ -609,24 +609,55 @@
         
         const statusNorm = status.toLowerCase().trim();
         const isFinalizado = statusNorm === 'devolução finalizada' || statusNorm === 'devolucao finalizada';
-        
+
+        // Verificar se está há mais de 2 dias sem primeira localização
+        let alertaSemLocalizacao = false;
+        let diasSemLocalizacao = 0;
+
+        if (statusNorm === 'novo' && dataReq) {
+          const hoje = new Date();
+          const diffMs = hoje - dataReq;
+          const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+          if (diffDias >= 2) {
+            alertaSemLocalizacao = true;
+            diasSemLocalizacao = diffDias;
+          }
+        }
+
         const historico = montarHistoricoAcoes(r);
-        const historicoHTML = historico.length > 0 
+        const historicoHTML = historico.length > 0
           ? `<div class="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
                <div class="text-xs font-bold text-blue-900 mb-2">📋 HISTÓRICO DE AÇÕES:</div>
                ${historico.map(h => `<div class="text-xs text-blue-800 mb-1">${h}</div>`).join('')}
              </div>`
           : '';
 
-        const finalizadoHTML = isFinalizado 
+        const finalizadoHTML = isFinalizado
           ? `<div class="mt-3 p-3 bg-green-100 border-2 border-green-500 rounded text-center">
                <span class="text-lg font-bold text-green-800">✅ ITEM FINALIZADO</span>
              </div>`
           : '';
 
+        const alertaHTML = alertaSemLocalizacao
+          ? `<div class="mt-3 p-3 bg-red-100 border-2 border-red-600 rounded">
+               <div class="flex items-center gap-2">
+                 <span class="text-2xl">⚠️</span>
+                 <div>
+                   <div class="text-sm font-bold text-red-800">ATENÇÃO: SEM LOCALIZAÇÃO HÁ ${diasSemLocalizacao} DIAS!</div>
+                   <div class="text-xs text-red-700">Este item precisa ser endereçado urgentemente.</div>
+                 </div>
+               </div>
+             </div>`
+          : '';
+
         const card = document.createElement('div');
-        card.className = 'p-4 rounded-lg border shadow-sm';
-        
+        const cardClasses = alertaSemLocalizacao
+          ? 'p-4 rounded-lg border-2 border-red-700 shadow-lg bg-red-50'
+          : 'p-4 rounded-lg border shadow-sm';
+
+        card.className = cardClasses;
+
         let botoesHTML = '';
         
         if (!isFinalizado) {
@@ -672,6 +703,7 @@
               <div class="text-sm text-gray-600">Cones: <b>${qtd}</b>${kg > 0 ? ` | KG: <b>${kg}</b>` : ''} | Setor: <b>${setor}</b> | Estoque: <b>${estoque}</b></div>
               <div class="text-sm text-gray-600">Status: <span class="font-medium">${status}</span></div>
               <div class="text-xs text-gray-500 mt-1">Solicitante: ${solicit} ${dataReq ? ' | ' + dataReq.toLocaleString() : ''}</div>
+              ${alertaHTML}
               ${historicoHTML}
               ${finalizadoHTML}
             </div>
