@@ -368,8 +368,8 @@ function getPedidosComEstoque() {
     }
 
     const rowsCount = wsPedidos.getLastRow() - 1;
-    const numCols = Math.min(wsPedidos.getLastColumn(), 22);
-    
+    const numCols = Math.min(wsPedidos.getLastColumn(), 23);
+
     Logger.log('Lendo ' + rowsCount + ' pedidos com ' + numCols + ' colunas');
     
     let pedidosData = wsPedidos.getRange(2, 1, rowsCount, numCols).getValues();
@@ -442,19 +442,20 @@ function getPedidosComEstoque() {
       const pedido = pedidosData[i];
       const arr = [];
       
-      for (let j = 0; j < 22; j++) {
+      for (let j = 0; j < 23; j++) {
         if (j < pedido.length) {
           arr[j] = _serialize_(pedido[j]);
         } else {
           arr[j] = '';
         }
       }
-      
+
       const idItem = _normalizeId_(pedido[2]);
       arr[2] = produtosMap.get(idItem) || idItem || 'Item Desconhecido';
       arr[19] = estoqueMap.get(idItem) || 0;
       arr[20] = idItem;
       arr[21] = pedido[21] || 0;
+      arr[22] = pedido[22] || '';
       
       resultado.push(arr);
     }
@@ -499,7 +500,7 @@ function criarNovoPedido(dados) {
       dados.setor,
       new Date(),
       dados.solicitante,
-      '', '', '', '', '', '', '', '', '', '', '', '', '', '', kg
+      '', '', '', '', '', '', '', '', '', '', '', '', '', '', kg, ''
     ];
     
     ws.appendRow(novaLinha);
@@ -550,6 +551,7 @@ function atualizarPedido(id, acao, valores) {
           case 'iniciarDevolucao':
             ws.getRange(L, 2).setValue('Aguardando Devolução');
             ws.getRange(L, 15).setValue(valores.usuario);
+            ws.getRange(L, 23).setValue(new Date());
             return "Processo de devolução iniciado.";
           case 'coletarDevolucao':
             ws.getRange(L, 2).setValue('Devolução Finalizada');
@@ -601,7 +603,7 @@ function arquivarItensFinalizados() {
       return;
     }
 
-    const numCols = Math.min(wsMovimentacoes.getLastColumn(), 22);
+    const numCols = Math.min(wsMovimentacoes.getLastColumn(), 23);
     const dados = wsMovimentacoes.getRange(2, 1, lastRow - 1, numCols).getValues();
 
     Logger.log('Total de registros: ' + dados.length);

@@ -606,7 +606,8 @@
         const estoque  = r[19] || 0;
         const corId    = String(r[20] || '');
         const kg       = r[21] || 0;
-        
+        const dataInicioDev = r[22] ? new Date(r[22]) : null;
+
         const statusNorm = status.toLowerCase().trim();
         const isFinalizado = statusNorm === 'devolução finalizada' || statusNorm === 'devolucao finalizada';
 
@@ -622,6 +623,25 @@
           if (diffDias >= 2) {
             alertaSemLocalizacao = true;
             diasSemLocalizacao = diffDias;
+          }
+        }
+
+        // Verificar se está há mais de 2 dias em Aguardando Devolução
+        let alertaDevolucaoAtrasada = false;
+        let diasDevolucaoAtrasada = 0;
+
+        const isAguardandoDevolucao =
+          statusNorm === 'aguardando devolucao' ||
+          statusNorm === 'aguardando devolução';
+
+        if (isAguardandoDevolucao && dataInicioDev) {
+          const hoje = new Date();
+          const diffMs = hoje - dataInicioDev;
+          const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+          if (diffDias >= 2) {
+            alertaDevolucaoAtrasada = true;
+            diasDevolucaoAtrasada = diffDias;
           }
         }
 
@@ -651,10 +671,26 @@
              </div>`
           : '';
 
+        const alertaDevolucaoHTML = alertaDevolucaoAtrasada
+          ? `<div class="mt-3 p-3 bg-purple-100 border-2 border-purple-600 rounded">
+               <div class="flex items-center gap-2">
+                 <span class="text-2xl">🔄</span>
+                 <div>
+                   <div class="text-sm font-bold text-purple-800">ATENÇÃO: AGUARDANDO DEVOLUÇÃO HÁ ${diasDevolucaoAtrasada} DIAS!</div>
+                   <div class="text-xs text-purple-700">Esta devolução precisa ser coletada urgentemente.</div>
+                 </div>
+               </div>
+             </div>`
+          : '';
+
         const card = document.createElement('div');
-        const cardClasses = alertaSemLocalizacao
-          ? 'p-4 rounded-lg border-2 border-red-700 shadow-lg bg-red-50'
-          : 'p-4 rounded-lg border shadow-sm';
+        let cardClasses = 'p-4 rounded-lg border shadow-sm';
+
+        if (alertaSemLocalizacao) {
+          cardClasses = 'p-4 rounded-lg border-2 border-red-700 shadow-lg bg-red-50';
+        } else if (alertaDevolucaoAtrasada) {
+          cardClasses = 'p-4 rounded-lg border-2 border-purple-700 shadow-lg bg-purple-50';
+        }
 
         card.className = cardClasses;
 
@@ -704,6 +740,7 @@
               <div class="text-sm text-gray-600">Status: <span class="font-medium">${status}</span></div>
               <div class="text-xs text-gray-500 mt-1">Solicitante: ${solicit} ${dataReq ? ' | ' + dataReq.toLocaleString() : ''}</div>
               ${alertaHTML}
+              ${alertaDevolucaoHTML}
               ${historicoHTML}
               ${finalizadoHTML}
             </div>
