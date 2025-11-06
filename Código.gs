@@ -354,16 +354,29 @@ function buscarItens(termo, limite) {
 function getPedidosComEstoque() {
   try {
     Logger.log('=== INÍCIO getPedidosComEstoque ===');
+    Logger.log('Chamando getSS_()...');
+
     const ss = getSS_();
+    if (!ss) {
+      Logger.log('ERRO CRÍTICO: getSS_() retornou null/undefined');
+      return [];
+    }
+
+    Logger.log('Planilha carregada: ' + ss.getName());
+    Logger.log('ID da planilha: ' + ss.getId());
 
     const wsPedidos = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
     if (!wsPedidos) {
       Logger.log('ERRO: Aba MOVIMENTACOES não encontrada');
+      Logger.log('Abas disponíveis: ' + ss.getSheets().map(s => s.getName()).join(', '));
       return [];
     }
 
+    Logger.log('Aba MOVIMENTACOES encontrada: ' + wsPedidos.getName());
+    Logger.log('Última linha: ' + wsPedidos.getLastRow());
+
     if (wsPedidos.getLastRow() < 2) {
-      Logger.log('Aba MOVIMENTACOES vazia');
+      Logger.log('Aba MOVIMENTACOES vazia (sem dados além do cabeçalho)');
       return [];
     }
 
@@ -479,11 +492,22 @@ function getPedidosComEstoque() {
       Logger.log('Exemplo de primeiro pedido (primeiros 10 campos): ' + JSON.stringify(resultado[0].slice(0, 10)));
     }
 
+    // Garantir que sempre retorna array válido
+    if (!resultado || !Array.isArray(resultado)) {
+      Logger.log('AVISO: resultado não é array válido, retornando array vazio');
+      return [];
+    }
+
+    Logger.log('Tipo de retorno confirmado: Array com ' + resultado.length + ' elementos');
     return resultado;
 
   } catch (e) {
-    Logger.log('ERRO em getPedidosComEstoque: ' + e.message);
+    Logger.log('========================================');
+    Logger.log('ERRO CAPTURADO em getPedidosComEstoque');
+    Logger.log('Mensagem: ' + e.message);
     Logger.log('Stack: ' + e.stack);
+    Logger.log('Linha: ' + e.lineNumber);
+    Logger.log('========================================');
     Logger.log('Retornando array vazio devido ao erro');
     return [];
   }
@@ -789,6 +813,46 @@ function removerTriggerArquivamento() {
 /** =========================
  * Debug
  * ========================= */
+
+/**
+ * Função de teste para diagnosticar problemas
+ * Execute esta função manualmente no Apps Script
+ */
+function testarGetPedidosComEstoque() {
+  Logger.log('==========================================');
+  Logger.log('TESTE MANUAL: getPedidosComEstoque');
+  Logger.log('==========================================');
+
+  try {
+    const resultado = getPedidosComEstoque();
+
+    Logger.log('Resultado recebido:');
+    Logger.log('- Tipo: ' + typeof resultado);
+    Logger.log('- É null? ' + (resultado === null));
+    Logger.log('- É undefined? ' + (resultado === undefined));
+    Logger.log('- É array? ' + Array.isArray(resultado));
+    Logger.log('- Length: ' + (resultado ? resultado.length : 'N/A'));
+
+    if (resultado && Array.isArray(resultado) && resultado.length > 0) {
+      Logger.log('- Primeiro item: ' + JSON.stringify(resultado[0]));
+    }
+
+    Logger.log('==========================================');
+    Logger.log('TESTE CONCLUÍDO COM SUCESSO');
+    Logger.log('==========================================');
+
+    return resultado;
+
+  } catch (erro) {
+    Logger.log('==========================================');
+    Logger.log('ERRO NO TESTE');
+    Logger.log('Mensagem: ' + erro.message);
+    Logger.log('Stack: ' + erro.stack);
+    Logger.log('==========================================');
+    throw erro;
+  }
+}
+
 function debugResumo() {
   const ss = getSS_();
   const ws = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
@@ -801,10 +865,10 @@ function debugResumo() {
       name: ws ? ws.getName() : null,
       lastRow: ws ? ws.getLastRow() : 0,
       lastCol: ws ? ws.getLastColumn() : 0,
-      headers: ws ? ws.getRange(1, 1, 1, Math.min(ws.getLastColumn(), 18)).getValues()[0] : []
+      headers: ws ? ws.getRange(1, 1, 1, Math.min(ws.getLastColumn(), 23)).getValues()[0] : []
     },
     sample: ws && ws.getLastRow() > 1
-      ? ws.getRange(2, 1, Math.min(3, ws.getLastRow() - 1), Math.min(ws.getLastColumn(), 18)).getValues()
+      ? ws.getRange(2, 1, Math.min(3, ws.getLastRow() - 1), Math.min(ws.getLastColumn(), 23)).getValues()
       : []
   };
   Logger.log('Debug: ' + JSON.stringify(info));
