@@ -564,8 +564,37 @@
         return;
       }
 
+      // Função para definir prioridade de ordenação por status
+      function getPrioridadeStatus(status) {
+        const statusNorm = _normLoose(status);
+
+        if (statusNorm === 'novo') return 1;
+        if (statusNorm === 'aguardando coleta') return 2;
+        if (statusNorm === 'em transito' || statusNorm === 'em trânsito') return 3;
+        if (statusNorm === 'finalizado') return 4;
+        if (statusNorm === 'aguardando devolucao' || statusNorm === 'aguardando devolução') return 5;
+        if (statusNorm === 'devolucao finalizada' || statusNorm === 'devolução finalizada') return 6;
+
+        return 999; // Status desconhecido vai para o final
+      }
+
+      // Ordenar cards por prioridade de status
+      filtrados.sort((a, b) => {
+        const prioA = getPrioridadeStatus(a[1]);
+        const prioB = getPrioridadeStatus(b[1]);
+
+        if (prioA !== prioB) {
+          return prioA - prioB;
+        }
+
+        // Se tiverem o mesmo status, ordenar por data (mais recente primeiro)
+        const dateA = a[5] ? new Date(a[5]).getTime() : 0;
+        const dateB = b[5] ? new Date(b[5]).getTime() : 0;
+        return dateB - dateA;
+      });
+
       el.innerHTML = '';
-      
+
       filtrados.forEach(r => {
         const idPedido = String(r[0] || '');
         const status   = String(r[1] || '');
