@@ -498,8 +498,42 @@ function getPedidosComEstoque() {
       return [];
     }
 
-    Logger.log('Tipo de retorno confirmado: Array com ' + resultado.length + ' elementos');
-    return resultado;
+    // SERIALIZAÇÃO EXTRA para garantir compatibilidade com google.script.run
+    // Converte tudo para tipos primitivos simples (string, number, boolean, null)
+    const resultadoSerializado = resultado.map(function(pedido) {
+      return pedido.map(function(valor) {
+        // Se for Date, converter para timestamp
+        if (valor instanceof Date) {
+          return valor.getTime();
+        }
+        // Se for null ou undefined, retornar string vazia
+        if (valor === null || valor === undefined) {
+          return '';
+        }
+        // Se for number (incluindo NaN), garantir que é válido
+        if (typeof valor === 'number') {
+          if (isNaN(valor) || !isFinite(valor)) {
+            return 0;
+          }
+          return valor;
+        }
+        // Se for objeto ou array (não deveria acontecer), converter para string
+        if (typeof valor === 'object') {
+          try {
+            return JSON.stringify(valor);
+          } catch (e) {
+            return '';
+          }
+        }
+        // Retornar como string para garantir serialização
+        return String(valor);
+      });
+    });
+
+    Logger.log('Tipo de retorno confirmado: Array com ' + resultadoSerializado.length + ' elementos');
+    Logger.log('Exemplo serializado: ' + JSON.stringify(resultadoSerializado[0].slice(0, 5)));
+
+    return resultadoSerializado;
 
   } catch (e) {
     Logger.log('========================================');
