@@ -570,6 +570,213 @@ function atualizarPedido(id, acao, valores) {
 }
 
 /** =========================
+ * Arquivamento Automático
+ * ========================= */
+
+/**
+ * Arquiva itens com "Devolução Finalizada" há mais de 7 dias
+ * Move da aba MOVIMENTACOES para a aba historico
+ */
+function arquivarItensFinalizados() {
+  try {
+    Logger.log('=== INÍCIO arquivarItensFinalizados ===');
+
+    const ss = getSS_();
+    const wsMovimentacoes = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
+    const wsHistorico = _getSheetByNames_(ss, ["historico", "Historico", "Histórico", "HISTORICO"]);
+
+    if (!wsMovimentacoes) {
+      Logger.log('ERRO: Aba MOVIMENTACOES não encontrada');
+      return;
+    }
+
+    if (!wsHistorico) {
+      Logger.log('ERRO: Aba historico não encontrada');
+      return;
+    }
+
+    const lastRow = wsMovimentacoes.getLastRow();
+    if (lastRow < 2) {
+      Logger.log('Nenhum registro para processar');
+      return;
+    }
+
+    const numCols = Math.min(wsMovimentacoes.getLastColumn(), 22);
+    const dados = wsMovimentacoes.getRange(2, 1, lastRow - 1, numCols).getValues();
+
+    Logger.log('Total de registros: ' + dados.length);
+
+    // Data limite: 7 dias atrás
+    const hoje = new Date();
+    const dataLimite = new Date(hoje.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+    Logger.log('Data limite para arquivamento: ' + dataLimite.toLocaleString('pt-BR'));
+
+    // Armazena linhas para arquivar (linha, dados)
+    const linhasParaArquivar = [];
+
+    for (let i = 0; i < dados.length; i++) {
+      const linha = dados[i];
+      const status = String(linha[1] || '').trim();
+      const dataDev = linha[17]; // Coluna 18 (índice 17)
+
+      // Normalizar status
+      const statusNorm = status
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+      // Verificar se é "Devolução Finalizada"
+      const isDevolucaoFinalizada =
+        statusNorm === 'devolucao finalizada' ||
+        statusNorm === 'devolução finalizada';
+
+      if (isDevolucaoFinalizada && dataDev) {
+        let dataDevObj;
+
+        // Converter para Date se necessário
+        if (dataDev instanceof Date) {
+          dataDevObj = dataDev;
+        } else {
+          dataDevObj = new Date(dataDev);
+        }
+
+        // Verificar se a data é válida e tem mais de 7 dias
+        if (dataDevObj && !isNaN(dataDevObj.getTime()) && dataDevObj < dataLimite) {
+          const diasAtras = Math.floor((hoje - dataDevObj) / (1000 * 60 * 60 * 24));
+          Logger.log('Linha ' + (i + 2) + ': ' + linha[0] + ' - Finalizado há ' + diasAtras + ' dias');
+
+          linhasParaArquivar.push({
+            indice: i + 2, // +2 porque linha 1 é cabeçalho e array começa em 0
+            dados: linha
+          });
+        }
+      }
+    }
+
+    Logger.log('Total de linhas para arquivar: ' + linhasParaArquivar.length);
+
+    if (linhasParaArquivar.length === 0) {
+      Logger.log('Nenhum item para arquivar');
+      return;
+    }
+
+    // Contador de sucessos
+    let arquivados = 0;
+    let erros = 0;
+
+    // Processar da última linha para a primeira (para não quebrar índices ao deletar)
+    linhasParaArquivar.reverse();
+
+    for (const item of linhasParaArquivar) {
+      try {
+        // 1. Copiar para historico
+        wsHistorico.appendRow(item.dados);
+
+        // 2. Verificar se copiou corretamente
+        const ultimaLinhaHistorico = wsHistorico.getLastRow();
+        const linhaCopiada = wsHistorico.getRange(ultimaLinhaHistorico, 1, 1, numCols).getValues()[0];
+
+        // Comparar ID do pedido (primeira coluna) para validar
+        const idOriginal = String(item.dados[0] || '').trim();
+        const idCopiado = String(linhaCopiada[0] || '').trim();
+
+        if (idOriginal === idCopiado && idCopiado !== '') {
+          // 3. Cópia confirmada - pode deletar da MOVIMENTACOES
+          wsMovimentacoes.deleteRow(item.indice);
+          arquivados++;
+          Logger.log('✅ Arquivado com sucesso: ' + idOriginal);
+        } else {
+          // Cópia falhou - remover a linha incorreta do histórico
+          wsHistorico.deleteRow(ultimaLinhaHistorico);
+          erros++;
+          Logger.log('❌ Erro ao arquivar: ' + idOriginal + ' - Cópia não validada');
+        }
+
+        // Pequena pausa para evitar sobrecarga
+        Utilities.sleep(100);
+
+      } catch (erro) {
+        erros++;
+        Logger.log('❌ Erro ao processar linha ' + item.indice + ': ' + erro.message);
+      }
+    }
+
+    Logger.log('=== FIM arquivarItensFinalizados ===');
+    Logger.log('Total arquivados: ' + arquivados);
+    Logger.log('Total com erros: ' + erros);
+
+    return {
+      arquivados: arquivados,
+      erros: erros,
+      total: linhasParaArquivar.length
+    };
+
+  } catch (e) {
+    Logger.log('ERRO GERAL em arquivarItensFinalizados: ' + e.message);
+    Logger.log('Stack: ' + e.stack);
+    throw e;
+  }
+}
+
+/**
+ * Instala o trigger automático para arquivamento diário
+ * Execute esta função UMA VEZ para ativar o arquivamento automático
+ */
+function instalarTriggerArquivamento() {
+  try {
+    // Primeiro, remove triggers antigos para evitar duplicatas
+    removerTriggerArquivamento();
+
+    // Cria novo trigger para rodar todo dia às 2h da manhã
+    ScriptApp.newTrigger('arquivarItensFinalizados')
+      .timeBased()
+      .atHour(2)
+      .everyDays(1)
+      .create();
+
+    Logger.log('✅ Trigger de arquivamento automático instalado com sucesso!');
+    Logger.log('O sistema irá arquivar itens finalizados automaticamente todos os dias às 2h');
+
+    return 'Trigger instalado com sucesso! Arquivamento automático ativado.';
+
+  } catch (e) {
+    Logger.log('❌ Erro ao instalar trigger: ' + e.message);
+    throw e;
+  }
+}
+
+/**
+ * Remove o trigger automático de arquivamento
+ */
+function removerTriggerArquivamento() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    let removidos = 0;
+
+    for (const trigger of triggers) {
+      if (trigger.getHandlerFunction() === 'arquivarItensFinalizados') {
+        ScriptApp.deleteTrigger(trigger);
+        removidos++;
+      }
+    }
+
+    if (removidos > 0) {
+      Logger.log('✅ Removidos ' + removidos + ' trigger(s) de arquivamento');
+    } else {
+      Logger.log('ℹ️ Nenhum trigger de arquivamento encontrado');
+    }
+
+    return 'Triggers removidos: ' + removidos;
+
+  } catch (e) {
+    Logger.log('❌ Erro ao remover triggers: ' + e.message);
+    throw e;
+  }
+}
+
+/** =========================
  * Debug
  * ========================= */
 function debugResumo() {
