@@ -430,11 +430,11 @@ function getPedidosComEstoque() {
       const colQtd = _findColByNames_(wsEstoque, ["Qtd", "Quantidade", "Estoque", "Qtd_Atual", "Qtde"]);
       
       if (colId && colQtd) {
-        const maxRows = Math.min(wsEstoque.getLastRow() - 1, 1000);
+        const maxRows = wsEstoque.getLastRow() - 1;  // LÊ TODAS AS LINHAS
         const ids = wsEstoque.getRange(2, colId, maxRows, 1).getValues();
         const qts = wsEstoque.getRange(2, colQtd, maxRows, 1).getValues();
-        
-        Logger.log('Carregando estoque: ' + maxRows + ' linhas');
+
+        Logger.log('Carregando estoque: ' + maxRows + ' linhas (TODAS)');
 
         for (let i = 0; i < ids.length; i++) {
           const id = _simpleId_(ids[i][0]);  // Usa ID exato (apenas trim)
@@ -931,7 +931,7 @@ function diagnosticarEstoque() {
       return;
     }
 
-    const maxRows = Math.min(wsEstoque.getLastRow() - 1, 1000);
+    const maxRows = wsEstoque.getLastRow() - 1;  // LÊ TODAS AS LINHAS
     const estoqueData = wsEstoque.getRange(2, 1, maxRows, 3).getValues();
 
     // Criar mapa de estoque
