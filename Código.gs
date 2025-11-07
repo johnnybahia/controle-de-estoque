@@ -61,6 +61,15 @@ function _normalizeId_(value) {
   return String(value).trim().replace(/\.0+$/, '');
 }
 
+/**
+ * Versão simples de normalização - apenas trim
+ * Usa correspondência EXATA para busca de estoque
+ */
+function _simpleId_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  return String(value).trim();
+}
+
 function _isValidItemId_(value) {
   if (!value) return false;
   
@@ -393,7 +402,7 @@ function getPedidosComEstoque() {
 
     const idsUnicos = new Set();
     pedidosData.forEach(row => {
-      const id = _normalizeId_(row[2]);
+      const id = _simpleId_(row[2]);  // Usa ID exato (apenas trim)
       if (id) idsUnicos.add(id);
     });
 
@@ -426,11 +435,11 @@ function getPedidosComEstoque() {
         const qts = wsEstoque.getRange(2, colQtd, maxRows, 1).getValues();
         
         Logger.log('Carregando estoque: ' + maxRows + ' linhas');
-        
+
         for (let i = 0; i < ids.length; i++) {
-          const id = _normalizeId_(ids[i][0]);
+          const id = _simpleId_(ids[i][0]);  // Usa ID exato (apenas trim)
           const qtdRaw = qts[i][0];
-          
+
           if (id && idsUnicos.has(id)) {
             let qtdFinal = 0;
             
@@ -466,7 +475,7 @@ function getPedidosComEstoque() {
         }
       }
 
-      const idItem = _normalizeId_(pedido[2]);
+      const idItem = _simpleId_(pedido[2]);  // Usa ID exato (apenas trim)
       arr[2] = produtosMap.get(idItem) || idItem || 'Item Desconhecido';
       arr[19] = estoqueMap.get(idItem) || 0;
       arr[20] = idItem;
@@ -928,7 +937,7 @@ function diagnosticarEstoque() {
     // Criar mapa de estoque
     const estoqueMap = new Map();
     estoqueData.forEach(function(row) {
-      const id = _normalizeId_(row[0]);
+      const id = _simpleId_(row[0]);  // Usa ID exato (apenas trim)
       const qtd = row[1];
       if (id) {
         estoqueMap.set(id, qtd);
@@ -942,7 +951,7 @@ function diagnosticarEstoque() {
 
     pedidosData.forEach(function(pedido, index) {
       const idPedido = pedido[0];
-      const idItem = _normalizeId_(pedido[2]);
+      const idItem = _simpleId_(pedido[2]);  // Usa ID exato (apenas trim)
       const estoqueEncontrado = estoqueMap.get(idItem);
 
       Logger.log('');
