@@ -290,33 +290,54 @@
       return (fluxo[statusNorm] || []).includes(acao);
     }
 
+    // Função para formatar data no formato DD/MM/YYYY HH:MM
+    function formatarDataSimples(data) {
+      if (!data) return '';
+
+      const d = new Date(data);
+      if (isNaN(d.getTime())) return '';
+
+      const dia = String(d.getDate()).padStart(2, '0');
+      const mes = String(d.getMonth() + 1).padStart(2, '0');
+      const ano = d.getFullYear();
+      const horas = String(d.getHours()).padStart(2, '0');
+      const minutos = String(d.getMinutes()).padStart(2, '0');
+
+      return ` | <strong>Data:</strong> ${dia}/${mes}/${ano} | <strong>Horário:</strong> ${horas}:${minutos}`;
+    }
+
     function montarHistoricoAcoes(r) {
       const historico = [];
-      
+
       if (r[7]) {
         const local = r[8] || 'Não informado';
-        historico.push(`📍 <strong>Endereçado por:</strong> ${r[7]} | <strong>Localização:</strong> ${local}`);
+        const dataFormatada = formatarDataSimples(r[9]);
+        historico.push(`📍 <strong>Endereçado por:</strong> ${r[7]} | <strong>Localização:</strong> ${local}${dataFormatada}`);
       }
-      
+
       if (r[10]) {
         const local = r[11] || 'Não informado';
-        historico.push(`📦 <strong>Coletado por:</strong> ${r[10]} | <strong>Confirmou localização:</strong> ${local}`);
+        const dataFormatada = formatarDataSimples(r[12]);
+        historico.push(`📦 <strong>Coletado por:</strong> ${r[10]} | <strong>Confirmou localização:</strong> ${local}${dataFormatada}`);
       }
-      
+
       if (r[13]) {
         const recebidoPor = r[18] || 'Não informado';
-        historico.push(`✅ <strong>Recebido por:</strong> ${recebidoPor}`);
+        const dataFormatada = formatarDataSimples(r[13]);
+        historico.push(`✅ <strong>Recebido por:</strong> ${recebidoPor}${dataFormatada}`);
       }
-      
+
       if (r[14]) {
-        historico.push(`🔄 <strong>Devolução iniciada por:</strong> ${r[14]}`);
+        const dataFormatada = formatarDataSimples(r[22]);
+        historico.push(`🔄 <strong>Devolução iniciada por:</strong> ${r[14]}${dataFormatada}`);
       }
-      
+
       if (r[15]) {
         const local = r[16] || 'Não informado';
-        historico.push(`📍 <strong>Devolução coletada por:</strong> ${r[15]} | <strong>Localização:</strong> ${local}`);
+        const dataFormatada = formatarDataSimples(r[17]);
+        historico.push(`📍 <strong>Devolução coletada por:</strong> ${r[15]} | <strong>Localização:</strong> ${local}${dataFormatada}`);
       }
-      
+
       return historico;
     }
 
