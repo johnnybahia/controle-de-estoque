@@ -138,7 +138,7 @@
     const validItemIds = new Set();
     const validSetoresLower = new Map();
 
-    const REFRESH_EVERY_MS = 15000;
+    const REFRESH_EVERY_MS = 30000; // 30 segundos
     let autoRefreshTimer = null;
     let isLoadingPedidos = false;
 
@@ -510,7 +510,7 @@
       stopAutoRefresh();
       autoRefreshTimer = setInterval(() => {
         if (!isLoadingPedidos) {
-          console.log('🔄 Auto-refresh (15s)');
+          console.log('🔄 Auto-refresh (30s)');
           carregarPedidos(null, true);
         }
       }, REFRESH_EVERY_MS);
