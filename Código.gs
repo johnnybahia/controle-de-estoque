@@ -61,6 +61,15 @@ function _normalizeId_(value) {
   return String(value).trim().replace(/\.0+$/, '');
 }
 
+/**
+ * Versão simples de normalização - apenas trim
+ * Usa correspondência EXATA para busca de estoque
+ */
+function _simpleId_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  return String(value).trim();
+}
+
 function _isValidItemId_(value) {
   if (!value) return false;
   
@@ -354,31 +363,46 @@ function buscarItens(termo, limite) {
 function getPedidosComEstoque() {
   try {
     Logger.log('=== INÍCIO getPedidosComEstoque ===');
+    Logger.log('Chamando getSS_()...');
+
     const ss = getSS_();
+    if (!ss) {
+      Logger.log('ERRO CRÍTICO: getSS_() retornou null/undefined');
+      return [];
+    }
+
+    Logger.log('Planilha carregada: ' + ss.getName());
+    Logger.log('ID da planilha: ' + ss.getId());
 
     const wsPedidos = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
     if (!wsPedidos) {
       Logger.log('ERRO: Aba MOVIMENTACOES não encontrada');
+      Logger.log('Abas disponíveis: ' + ss.getSheets().map(s => s.getName()).join(', '));
       return [];
     }
 
+    Logger.log('Aba MOVIMENTACOES encontrada: ' + wsPedidos.getName());
+    Logger.log('Última linha: ' + wsPedidos.getLastRow());
+
     if (wsPedidos.getLastRow() < 2) {
-      Logger.log('Aba MOVIMENTACOES vazia');
+      Logger.log('Aba MOVIMENTACOES vazia (sem dados além do cabeçalho)');
       return [];
     }
 
     const rowsCount = wsPedidos.getLastRow() - 1;
-    const numCols = Math.min(wsPedidos.getLastColumn(), 22);
-    
+    const totalCols = wsPedidos.getLastColumn();
+    const numCols = Math.max(22, Math.min(totalCols, 23)); // Garante pelo menos 22 colunas
+
+    Logger.log('Total de colunas na planilha: ' + totalCols);
     Logger.log('Lendo ' + rowsCount + ' pedidos com ' + numCols + ' colunas');
-    
+
     let pedidosData = wsPedidos.getRange(2, 1, rowsCount, numCols).getValues();
-    
+
     Logger.log('Pedidos lidos: ' + pedidosData.length);
 
     const idsUnicos = new Set();
     pedidosData.forEach(row => {
-      const id = _normalizeId_(row[2]);
+      const id = _simpleId_(row[2]);  // Usa ID exato (apenas trim)
       if (id) idsUnicos.add(id);
     });
 
@@ -406,16 +430,16 @@ function getPedidosComEstoque() {
       const colQtd = _findColByNames_(wsEstoque, ["Qtd", "Quantidade", "Estoque", "Qtd_Atual", "Qtde"]);
       
       if (colId && colQtd) {
-        const maxRows = Math.min(wsEstoque.getLastRow() - 1, 1000);
+        const maxRows = wsEstoque.getLastRow() - 1;  // LÊ TODAS AS LINHAS
         const ids = wsEstoque.getRange(2, colId, maxRows, 1).getValues();
         const qts = wsEstoque.getRange(2, colQtd, maxRows, 1).getValues();
-        
-        Logger.log('Carregando estoque: ' + maxRows + ' linhas');
-        
+
+        Logger.log('Carregando estoque: ' + maxRows + ' linhas (TODAS)');
+
         for (let i = 0; i < ids.length; i++) {
-          const id = _normalizeId_(ids[i][0]);
+          const id = _simpleId_(ids[i][0]);  // Usa ID exato (apenas trim)
           const qtdRaw = qts[i][0];
-          
+
           if (id && idsUnicos.has(id)) {
             let qtdFinal = 0;
             
@@ -437,25 +461,27 @@ function getPedidosComEstoque() {
     Logger.log('Estoque carregado: ' + estoqueMap.size + ' itens');
 
     const resultado = [];
-    
+
     for (let i = 0; i < pedidosData.length; i++) {
       const pedido = pedidosData[i];
       const arr = [];
-      
-      for (let j = 0; j < 22; j++) {
-        if (j < pedido.length) {
+
+      // Garantir que sempre temos 23 posições, mesmo que a planilha tenha menos colunas
+      for (let j = 0; j < 23; j++) {
+        if (j < pedido.length && pedido[j] !== undefined && pedido[j] !== null) {
           arr[j] = _serialize_(pedido[j]);
         } else {
           arr[j] = '';
         }
       }
-      
-      const idItem = _normalizeId_(pedido[2]);
+
+      const idItem = _simpleId_(pedido[2]);  // Usa ID exato (apenas trim)
       arr[2] = produtosMap.get(idItem) || idItem || 'Item Desconhecido';
       arr[19] = estoqueMap.get(idItem) || 0;
       arr[20] = idItem;
-      arr[21] = pedido[21] || 0;
-      
+      arr[21] = (pedido.length > 21 && pedido[21]) ? pedido[21] : 0;
+      arr[22] = (pedido.length > 22 && pedido[22]) ? pedido[22] : ''; // Data início devolução (pode não existir ainda)
+
       resultado.push(arr);
     }
 
@@ -470,12 +496,62 @@ function getPedidosComEstoque() {
     });
 
     Logger.log('=== FIM - Retornando ' + resultado.length + ' pedidos ===');
-    
-    return resultado;
-    
+
+    if (resultado.length > 0) {
+      Logger.log('Exemplo de primeiro pedido (primeiros 10 campos): ' + JSON.stringify(resultado[0].slice(0, 10)));
+    }
+
+    // Garantir que sempre retorna array válido
+    if (!resultado || !Array.isArray(resultado)) {
+      Logger.log('AVISO: resultado não é array válido, retornando array vazio');
+      return [];
+    }
+
+    // SERIALIZAÇÃO EXTRA para garantir compatibilidade com google.script.run
+    // Converte tudo para tipos primitivos simples (string, number, boolean, null)
+    const resultadoSerializado = resultado.map(function(pedido) {
+      return pedido.map(function(valor) {
+        // Se for Date, converter para timestamp
+        if (valor instanceof Date) {
+          return valor.getTime();
+        }
+        // Se for null ou undefined, retornar string vazia
+        if (valor === null || valor === undefined) {
+          return '';
+        }
+        // Se for number (incluindo NaN), garantir que é válido
+        if (typeof valor === 'number') {
+          if (isNaN(valor) || !isFinite(valor)) {
+            return 0;
+          }
+          return valor;
+        }
+        // Se for objeto ou array (não deveria acontecer), converter para string
+        if (typeof valor === 'object') {
+          try {
+            return JSON.stringify(valor);
+          } catch (e) {
+            return '';
+          }
+        }
+        // Retornar como string para garantir serialização
+        return String(valor);
+      });
+    });
+
+    Logger.log('Tipo de retorno confirmado: Array com ' + resultadoSerializado.length + ' elementos');
+    Logger.log('Exemplo serializado: ' + JSON.stringify(resultadoSerializado[0].slice(0, 5)));
+
+    return resultadoSerializado;
+
   } catch (e) {
-    Logger.log('ERRO em getPedidosComEstoque: ' + e.message);
+    Logger.log('========================================');
+    Logger.log('ERRO CAPTURADO em getPedidosComEstoque');
+    Logger.log('Mensagem: ' + e.message);
     Logger.log('Stack: ' + e.stack);
+    Logger.log('Linha: ' + e.lineNumber);
+    Logger.log('========================================');
+    Logger.log('Retornando array vazio devido ao erro');
     return [];
   }
 }
@@ -499,7 +575,7 @@ function criarNovoPedido(dados) {
       dados.setor,
       new Date(),
       dados.solicitante,
-      '', '', '', '', '', '', '', '', '', '', '', '', '', '', kg
+      '', '', '', '', '', '', '', '', '', '', '', '', '', '', kg, ''
     ];
     
     ws.appendRow(novaLinha);
@@ -550,6 +626,7 @@ function atualizarPedido(id, acao, valores) {
           case 'iniciarDevolucao':
             ws.getRange(L, 2).setValue('Aguardando Devolução');
             ws.getRange(L, 15).setValue(valores.usuario);
+            ws.getRange(L, 23).setValue(new Date());
             return "Processo de devolução iniciado.";
           case 'coletarDevolucao':
             ws.getRange(L, 2).setValue('Devolução Finalizada');
@@ -570,8 +647,348 @@ function atualizarPedido(id, acao, valores) {
 }
 
 /** =========================
+ * Arquivamento Automático
+ * ========================= */
+
+/**
+ * Arquiva itens com "Devolução Finalizada" há mais de 7 dias
+ * Move da aba MOVIMENTACOES para a aba historico
+ */
+function arquivarItensFinalizados() {
+  try {
+    Logger.log('=== INÍCIO arquivarItensFinalizados ===');
+
+    const ss = getSS_();
+    const wsMovimentacoes = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
+    const wsHistorico = _getSheetByNames_(ss, ["historico", "Historico", "Histórico", "HISTORICO"]);
+
+    if (!wsMovimentacoes) {
+      Logger.log('ERRO: Aba MOVIMENTACOES não encontrada');
+      return;
+    }
+
+    if (!wsHistorico) {
+      Logger.log('ERRO: Aba historico não encontrada');
+      return;
+    }
+
+    const lastRow = wsMovimentacoes.getLastRow();
+    if (lastRow < 2) {
+      Logger.log('Nenhum registro para processar');
+      return;
+    }
+
+    const numCols = Math.min(wsMovimentacoes.getLastColumn(), 23);
+    const dados = wsMovimentacoes.getRange(2, 1, lastRow - 1, numCols).getValues();
+
+    Logger.log('Total de registros: ' + dados.length);
+
+    // Data limite: 7 dias atrás
+    const hoje = new Date();
+    const dataLimite = new Date(hoje.getTime() - (7 * 24 * 60 * 60 * 1000));
+
+    Logger.log('Data limite para arquivamento: ' + dataLimite.toLocaleString('pt-BR'));
+
+    // Armazena linhas para arquivar (linha, dados)
+    const linhasParaArquivar = [];
+
+    for (let i = 0; i < dados.length; i++) {
+      const linha = dados[i];
+      const status = String(linha[1] || '').trim();
+      const dataDev = linha[17]; // Coluna 18 (índice 17)
+
+      // Normalizar status
+      const statusNorm = status
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+
+      // Verificar se é "Devolução Finalizada"
+      const isDevolucaoFinalizada =
+        statusNorm === 'devolucao finalizada' ||
+        statusNorm === 'devolução finalizada';
+
+      if (isDevolucaoFinalizada && dataDev) {
+        let dataDevObj;
+
+        // Converter para Date se necessário
+        if (dataDev instanceof Date) {
+          dataDevObj = dataDev;
+        } else {
+          dataDevObj = new Date(dataDev);
+        }
+
+        // Verificar se a data é válida e tem mais de 7 dias
+        if (dataDevObj && !isNaN(dataDevObj.getTime()) && dataDevObj < dataLimite) {
+          const diasAtras = Math.floor((hoje - dataDevObj) / (1000 * 60 * 60 * 24));
+          Logger.log('Linha ' + (i + 2) + ': ' + linha[0] + ' - Finalizado há ' + diasAtras + ' dias');
+
+          linhasParaArquivar.push({
+            indice: i + 2, // +2 porque linha 1 é cabeçalho e array começa em 0
+            dados: linha
+          });
+        }
+      }
+    }
+
+    Logger.log('Total de linhas para arquivar: ' + linhasParaArquivar.length);
+
+    if (linhasParaArquivar.length === 0) {
+      Logger.log('Nenhum item para arquivar');
+      return;
+    }
+
+    // Contador de sucessos
+    let arquivados = 0;
+    let erros = 0;
+
+    // Processar da última linha para a primeira (para não quebrar índices ao deletar)
+    linhasParaArquivar.reverse();
+
+    for (const item of linhasParaArquivar) {
+      try {
+        // 1. Copiar para historico
+        wsHistorico.appendRow(item.dados);
+
+        // 2. Verificar se copiou corretamente
+        const ultimaLinhaHistorico = wsHistorico.getLastRow();
+        const linhaCopiada = wsHistorico.getRange(ultimaLinhaHistorico, 1, 1, numCols).getValues()[0];
+
+        // Comparar ID do pedido (primeira coluna) para validar
+        const idOriginal = String(item.dados[0] || '').trim();
+        const idCopiado = String(linhaCopiada[0] || '').trim();
+
+        if (idOriginal === idCopiado && idCopiado !== '') {
+          // 3. Cópia confirmada - pode deletar da MOVIMENTACOES
+          wsMovimentacoes.deleteRow(item.indice);
+          arquivados++;
+          Logger.log('✅ Arquivado com sucesso: ' + idOriginal);
+        } else {
+          // Cópia falhou - remover a linha incorreta do histórico
+          wsHistorico.deleteRow(ultimaLinhaHistorico);
+          erros++;
+          Logger.log('❌ Erro ao arquivar: ' + idOriginal + ' - Cópia não validada');
+        }
+
+        // Pequena pausa para evitar sobrecarga
+        Utilities.sleep(100);
+
+      } catch (erro) {
+        erros++;
+        Logger.log('❌ Erro ao processar linha ' + item.indice + ': ' + erro.message);
+      }
+    }
+
+    Logger.log('=== FIM arquivarItensFinalizados ===');
+    Logger.log('Total arquivados: ' + arquivados);
+    Logger.log('Total com erros: ' + erros);
+
+    return {
+      arquivados: arquivados,
+      erros: erros,
+      total: linhasParaArquivar.length
+    };
+
+  } catch (e) {
+    Logger.log('ERRO GERAL em arquivarItensFinalizados: ' + e.message);
+    Logger.log('Stack: ' + e.stack);
+    throw e;
+  }
+}
+
+/**
+ * Instala o trigger automático para arquivamento diário
+ * Execute esta função UMA VEZ para ativar o arquivamento automático
+ */
+function instalarTriggerArquivamento() {
+  try {
+    // Primeiro, remove triggers antigos para evitar duplicatas
+    removerTriggerArquivamento();
+
+    // Cria novo trigger para rodar todo dia às 2h da manhã
+    ScriptApp.newTrigger('arquivarItensFinalizados')
+      .timeBased()
+      .atHour(2)
+      .everyDays(1)
+      .create();
+
+    Logger.log('✅ Trigger de arquivamento automático instalado com sucesso!');
+    Logger.log('O sistema irá arquivar itens finalizados automaticamente todos os dias às 2h');
+
+    return 'Trigger instalado com sucesso! Arquivamento automático ativado.';
+
+  } catch (e) {
+    Logger.log('❌ Erro ao instalar trigger: ' + e.message);
+    throw e;
+  }
+}
+
+/**
+ * Remove o trigger automático de arquivamento
+ */
+function removerTriggerArquivamento() {
+  try {
+    const triggers = ScriptApp.getProjectTriggers();
+    let removidos = 0;
+
+    for (const trigger of triggers) {
+      if (trigger.getHandlerFunction() === 'arquivarItensFinalizados') {
+        ScriptApp.deleteTrigger(trigger);
+        removidos++;
+      }
+    }
+
+    if (removidos > 0) {
+      Logger.log('✅ Removidos ' + removidos + ' trigger(s) de arquivamento');
+    } else {
+      Logger.log('ℹ️ Nenhum trigger de arquivamento encontrado');
+    }
+
+    return 'Triggers removidos: ' + removidos;
+
+  } catch (e) {
+    Logger.log('❌ Erro ao remover triggers: ' + e.message);
+    throw e;
+  }
+}
+
+/** =========================
  * Debug
  * ========================= */
+
+/**
+ * Função de teste para diagnosticar problemas
+ * Execute esta função manualmente no Apps Script
+ */
+function testarGetPedidosComEstoque() {
+  Logger.log('==========================================');
+  Logger.log('TESTE MANUAL: getPedidosComEstoque');
+  Logger.log('==========================================');
+
+  try {
+    const resultado = getPedidosComEstoque();
+
+    Logger.log('Resultado recebido:');
+    Logger.log('- Tipo: ' + typeof resultado);
+    Logger.log('- É null? ' + (resultado === null));
+    Logger.log('- É undefined? ' + (resultado === undefined));
+    Logger.log('- É array? ' + Array.isArray(resultado));
+    Logger.log('- Length: ' + (resultado ? resultado.length : 'N/A'));
+
+    if (resultado && Array.isArray(resultado) && resultado.length > 0) {
+      Logger.log('- Primeiro item: ' + JSON.stringify(resultado[0]));
+    }
+
+    Logger.log('==========================================');
+    Logger.log('TESTE CONCLUÍDO COM SUCESSO');
+    Logger.log('==========================================');
+
+    return resultado;
+
+  } catch (erro) {
+    Logger.log('==========================================');
+    Logger.log('ERRO NO TESTE');
+    Logger.log('Mensagem: ' + erro.message);
+    Logger.log('Stack: ' + erro.stack);
+    Logger.log('==========================================');
+    throw erro;
+  }
+}
+
+/**
+ * NOVA FUNÇÃO: Diagnostica problemas de correspondência de estoque
+ */
+function diagnosticarEstoque() {
+  Logger.log('==========================================');
+  Logger.log('DIAGNÓSTICO DE ESTOQUE');
+  Logger.log('==========================================');
+
+  try {
+    const ss = getSS_();
+
+    // Ler MOVIMENTACOES
+    const wsPedidos = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
+    if (!wsPedidos || wsPedidos.getLastRow() < 2) {
+      Logger.log('Aba MOVIMENTACOES vazia');
+      return;
+    }
+
+    const pedidosData = wsPedidos.getRange(2, 1, Math.min(wsPedidos.getLastRow() - 1, 10), 23).getValues();
+
+    // Ler ESTOQUE
+    const wsEstoque = _getSheetByNames_(ss, ["Estoque"]);
+    if (!wsEstoque || wsEstoque.getLastRow() < 2) {
+      Logger.log('Aba Estoque vazia');
+      return;
+    }
+
+    const colId = _findColByNames_(wsEstoque, ["ID_Item", "ID", "Item", "Codigo", "Código"]);
+    const colQtd = _findColByNames_(wsEstoque, ["Qtd", "Quantidade", "Estoque", "Qtd_Atual", "Qtde"]);
+
+    if (!colId || !colQtd) {
+      Logger.log('Colunas não encontradas no Estoque');
+      return;
+    }
+
+    const maxRows = wsEstoque.getLastRow() - 1;  // LÊ TODAS AS LINHAS
+    const estoqueData = wsEstoque.getRange(2, 1, maxRows, 3).getValues();
+
+    // Criar mapa de estoque
+    const estoqueMap = new Map();
+    estoqueData.forEach(function(row) {
+      const id = _simpleId_(row[0]);  // Usa ID exato (apenas trim)
+      const qtd = row[1];
+      if (id) {
+        estoqueMap.set(id, qtd);
+      }
+    });
+
+    Logger.log('Total de itens no estoque: ' + estoqueMap.size);
+    Logger.log('');
+    Logger.log('Verificando primeiros 10 pedidos:');
+    Logger.log('==========================================');
+
+    pedidosData.forEach(function(pedido, index) {
+      const idPedido = pedido[0];
+      const idItem = _simpleId_(pedido[2]);  // Usa ID exato (apenas trim)
+      const estoqueEncontrado = estoqueMap.get(idItem);
+
+      Logger.log('');
+      Logger.log('Pedido ' + (index + 1) + ':');
+      Logger.log('  ID Pedido: ' + idPedido);
+      Logger.log('  ID Item (raw): "' + pedido[2] + '"');
+      Logger.log('  ID Item (normalizado): "' + idItem + '"');
+      Logger.log('  Estoque encontrado: ' + (estoqueEncontrado !== undefined ? estoqueEncontrado : 'NÃO ENCONTRADO'));
+
+      if (estoqueEncontrado === undefined) {
+        // Tentar encontrar IDs similares no estoque
+        const similares = [];
+        estoqueMap.forEach(function(qtd, id) {
+          if (id.includes(idItem) || idItem.includes(id)) {
+            similares.push(id + ' (qtd: ' + qtd + ')');
+          }
+        });
+
+        if (similares.length > 0) {
+          Logger.log('  IDs similares no estoque: ' + similares.join(', '));
+        } else {
+          Logger.log('  Nenhum ID similar encontrado no estoque');
+        }
+      }
+    });
+
+    Logger.log('');
+    Logger.log('==========================================');
+    Logger.log('DIAGNÓSTICO CONCLUÍDO');
+    Logger.log('==========================================');
+
+  } catch (erro) {
+    Logger.log('ERRO: ' + erro.message);
+    Logger.log('Stack: ' + erro.stack);
+  }
+}
+
 function debugResumo() {
   const ss = getSS_();
   const ws = _getSheetByNames_(ss, ["MOVIMENTACOES", "Movimentacoes", "Movimentações"]);
@@ -584,10 +1001,10 @@ function debugResumo() {
       name: ws ? ws.getName() : null,
       lastRow: ws ? ws.getLastRow() : 0,
       lastCol: ws ? ws.getLastColumn() : 0,
-      headers: ws ? ws.getRange(1, 1, 1, Math.min(ws.getLastColumn(), 18)).getValues()[0] : []
+      headers: ws ? ws.getRange(1, 1, 1, Math.min(ws.getLastColumn(), 23)).getValues()[0] : []
     },
     sample: ws && ws.getLastRow() > 1
-      ? ws.getRange(2, 1, Math.min(3, ws.getLastRow() - 1), Math.min(ws.getLastColumn(), 18)).getValues()
+      ? ws.getRange(2, 1, Math.min(3, ws.getLastRow() - 1), Math.min(ws.getLastColumn(), 23)).getValues()
       : []
   };
   Logger.log('Debug: ' + JSON.stringify(info));
